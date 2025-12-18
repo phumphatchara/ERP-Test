@@ -4,9 +4,15 @@ import os
 
 def process_data(cur, conn):
     # 1. โหลดข้อมูลจาก CSV
-    worker_df = pd.read_csv('worker.csv')
-    bonus_df = pd.read_csv('bonus.csv')
-    title_df = pd.read_csv('title.csv')
+    base_path = '/workspaces/ERP-Test/data'
+    worker_df = pd.read_csv(os.path.join(base_path, 'worker.csv'))
+    bonus_df = pd.read_csv(os.path.join(base_path, 'bonus.csv'))
+    title_df = pd.read_csv(os.path.join(base_path, 'title.csv'))
+
+    # --- แปลงวันที่ให้ถูกต้องก่อนเข้า Loop ---
+    worker_df['JOINING_DATE'] = pd.to_datetime(worker_df['JOINING_DATE'], dayfirst=True)
+    bonus_df['BONUS_DATE'] = pd.to_datetime(bonus_df['BONUS_DATE'], dayfirst=True)
+    title_df['AFFECTED_FROM'] = pd.to_datetime(title_df['AFFECTED_FROM'], dayfirst=True)
 
     # 2. นำเข้าข้อมูลตาราง Worker
     print("Inserting worker data...")
@@ -20,26 +26,28 @@ def process_data(cur, conn):
     # 3. นำเข้าข้อมูลตาราง Bonus
     print("Inserting bonus data...")
     for _, row in bonus_df.iterrows():
+        # จัดการค่า NaN ในกรณีที่บางแถวไม่มีวันที่
+        b_date = row.BONUS_DATE if pd.notnull(row.BONUS_DATE) else None
         cur.execute("""
             INSERT INTO bonus (worker_ref_id, bonus_amount, bonus_date)
             VALUES (%s, %s, %s)
-        """, (row.WORKER_REF_ID, row.BONUS_AMOUNT, row.BONUS_DATE))
+        """, (row.WORKER_REF_ID, row.BONUS_AMOUNT, b_date))
 
-    # 4. นำเข้าข้อมูลตาราง Title (พร้อมจัดการเงื่อนไข Executive)
+    # 4. นำเข้าข้อมูลตาราง Title
     print("Inserting title data...")
-    # หา ID พนักงานที่ไม่มีในตาราง Title เพื่อใส่เป็น Executive
     all_worker_ids = set(worker_df['WORKER_ID'])
     titled_worker_ids = set(title_df['WORKER_REF_ID'])
     missing_title_ids = all_worker_ids - titled_worker_ids
 
-    # ใส่ข้อมูลที่มีอยู่
+    # ใส่ข้อมูลที่มีอยู่จากไฟล์ Title
     for _, row in title_df.iterrows():
+        t_date = row.AFFECTED_FROM if pd.notnull(row.AFFECTED_FROM) else None
         cur.execute("""
             INSERT INTO title (worker_ref_id, worker_title, affected_from)
             VALUES (%s, %s, %s)
-        """, (row.WORKER_REF_ID, row.WORKER_TITLE, row.AFFECTED_FROM))
+        """, (row.WORKER_REF_ID, row.WORKER_TITLE, t_date))
     
-    # ใส่ 'Executive' สำหรับคนที่ไม่มีตำแหน่ง
+    # ใส่ 'Executive' สำหรับคนที่ไม่มีตำแหน่งในไฟล์ Title
     for w_id in missing_title_ids:
         cur.execute("""
             INSERT INTO title (worker_ref_id, worker_title, affected_from)
@@ -50,12 +58,13 @@ def process_data(cur, conn):
     print("Data ETL completed successfully.")
 
 def main():
-    conn = psycopg2.connect("host=127.0.0.1 dbname=postgres user=postgres password=postgres")
-    cur = conn.cursor()
-
-    process_data(cur, conn)
-
-    conn.close()
+    try:
+        conn = psycopg2.connect("host=127.0.0.1 dbname=postgres user=postgres password=postgres")
+        cur = conn.cursor()
+        process_data(cur, conn)
+        conn.close()
+    except Exception as e:
+        print(f"Error: {e}")
 
 if __name__ == "__main__":
     main()

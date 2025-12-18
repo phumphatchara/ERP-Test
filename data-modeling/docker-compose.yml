@@ -1,7 +1,4 @@
-version: "3.9"
-
 services:
-  # --- ชุดที่ 1: Database & Tool ---
   postgres:
     image: postgres:13
     environment:
@@ -20,5 +17,18 @@ services:
       - postgres
     ports:
       - "8080:8080"
+
+  pyspark-notebook:
+    image: jupyter/pyspark-notebook
+    volumes:
+      - .:/home/jovyan/work
+    ports:
+      - "8888:8888"
+      - "4040:4040"
+      - "4041:4041"
+
+# ส่วนที่สำคัญที่สุด: ต้องมีการประกาศชื่อ volume ไว้ที่ระดับนอกสุดแบบนี้ด้วย
+volumes:
+  postgres-data-volume:
 
  ##docker exec -it $(docker ps -qf "name=postgres") psql -U postgres
